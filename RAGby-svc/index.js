@@ -41,7 +41,7 @@ app.use("/api/projects", projectRoutes);
 app.use("/api/chat", chatRoutes);
 
 // Health check
-app.get("/", (req, res) => {
+app.get("/healthCheck", (req, res) => {
   res.json({ 
     message: "RAGby Backend is running 🚀", 
     version: "1.0.0",
