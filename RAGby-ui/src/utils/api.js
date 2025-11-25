@@ -1,7 +1,7 @@
 import axios from 'axios';
 import toast from 'react-hot-toast';
 
-const API_BASE_URL = process.env.REACT_APP_RAGby_SVC_API_BASE_URL;
+ const API_BASE_URL = `${import.meta.env.VITE_RAGBY_SVC_API_BASE_URL}/api`;
 
 // Create axios instance
 const api = axios.create({
