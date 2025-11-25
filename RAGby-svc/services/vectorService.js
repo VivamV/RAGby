@@ -1,0 +1,209 @@
+import axios from 'axios';
+import { Pinecone } from '@pinecone-database/pinecone';
+
+class VectorService {
+  constructor() {
+    this.geminiApiKey = null;
+    this.pinecone = null;
+    this.index = null;
+    this.indexName = 'personalised-chatbot'; // Your Pinecone index name
+    this.dimension = 768; // text-embedding-004 produces 768-dimensional vectors
+  }
+
+  async initializeIfNeeded() {
+    if (!this.geminiApiKey) {
+      this.geminiApiKey = process.env.GEMINI_API_KEY;
+      if (!this.geminiApiKey) {
+        throw new Error('GEMINI_API_KEY environment variable is not set');
+      }
+    }
+
+    if (!this.pinecone) {
+      const pineconeApiKey = process.env.PINECONE_API_KEY;
+      if (!pineconeApiKey) {
+        throw new Error('PINECONE_API_KEY environment variable is not set');
+      }
+
+      this.pinecone = new Pinecone({
+        apiKey: pineconeApiKey,
+      });
+
+      try {
+        this.index = this.pinecone.index(this.indexName);
+        console.log(`Connected to Pinecone index: ${this.indexName}`);
+      } catch (error) {
+        console.error('Failed to connect to Pinecone index:', error);
+        throw new Error(`Failed to connect to Pinecone index: ${this.indexName}`);
+      }
+    }
+  }
+
+  // Generate embeddings using Google's Embedding API
+  async generateEmbedding(text) {
+    try {
+      await this.initializeIfNeeded();
+      
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent`;
+      
+      const response = await axios.post(`${url}?key=${this.geminiApiKey}`, {
+        model: "models/text-embedding-004",
+        content: {
+          parts: [{ text: text }]
+        }
+      });
+
+      return response.data.embedding.values;
+    } catch (error) {
+      console.error('Error generating embedding:', error.response?.data || error.message);
+      throw new Error('Failed to generate embedding');
+    }
+  }
+
+  // Split text into chunks for better embedding
+  chunkText(text, chunkSize = 1000, overlap = 200) {
+    const chunks = [];
+    const words = text.split(' ');
+    
+    for (let i = 0; i < words.length; i += chunkSize - overlap) {
+      const chunk = words.slice(i, i + chunkSize).join(' ');
+      if (chunk.trim().length > 0) {
+        chunks.push({
+          text: chunk.trim(),
+          startIndex: i,
+          endIndex: Math.min(i + chunkSize, words.length)
+        });
+      }
+    }
+    
+    return chunks;
+  }
+
+  // Store document with embeddings in Pinecone
+  async storeDocument(projectId, documentName, content) {
+    try {
+      await this.initializeIfNeeded();
+      
+      const chunks = this.chunkText(content);
+      const documentChunks = [];
+      const vectors = [];
+      
+      console.log(`Processing ${chunks.length} chunks for document: ${documentName}`);
+      
+      // Generate embeddings for each chunk
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        console.log(` Generating embedding for chunk ${i + 1}/${chunks.length}`);
+        
+        const embedding = await this.generateEmbedding(chunk.text);
+        const chunkId = `${projectId}_${documentName.replace(/[^a-zA-Z0-9]/g, '_')}_${i}`;
+        
+        const chunkData = {
+          id: chunkId,
+          projectId,
+          documentName,
+          text: chunk.text,
+          embedding,
+          metadata: {
+            projectId,
+            documentName,
+            chunkIndex: i,
+            startIndex: chunk.startIndex,
+            endIndex: chunk.endIndex,
+            length: chunk.text.length,
+            text: chunk.text.substring(0, 1000) // Pinecone metadata has size limits
+          }
+        };
+        
+        documentChunks.push(chunkData);
+        
+        // Prepare vector for Pinecone upsert
+        vectors.push({
+          id: chunkId,
+          values: embedding,
+          metadata: chunkData.metadata
+        });
+        
+        // Small delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      
+      // Batch upsert vectors to Pinecone
+      console.log(`Upserting ${vectors.length} vectors to Pinecone...`);
+      
+      // Pinecone recommends batching upserts in groups of 100
+      const batchSize = 100;
+      for (let i = 0; i < vectors.length; i += batchSize) {
+        const batch = vectors.slice(i, i + batchSize);
+        await this.index.upsert(batch);
+        console.log(`Upserted batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(vectors.length / batchSize)}`);
+      }
+      
+      console.log(`Stored ${documentChunks.length} chunks for document: ${documentName} in Pinecone`);
+      return documentChunks;
+    } catch (error) {
+      console.error('Error storing document in Pinecone:', error);
+      throw error;
+    }
+  }
+
+
+
+  // Search for similar documents using Pinecone vector similarity
+  async searchSimilarDocuments(projectId, query, topK = 5) {
+    try {
+      await this.initializeIfNeeded();
+      
+      console.log(`Searching for similar documents in project: ${projectId}`);
+      
+      // Generate embedding for the query
+      const queryEmbedding = await this.generateEmbedding(query);
+      console.log("query embedding generated in searchingsimilardocuments",queryEmbedding);
+      // Query Pinecone with project filter
+      const queryResponse = await this.index.query({
+        vector: queryEmbedding,
+        topK: topK,
+        includeMetadata: true,
+        filter: {
+          projectId: { $eq: projectId }
+        }
+      });
+      
+      console.log("Pinecone query response:", queryResponse);
+
+      if (!queryResponse.matches || queryResponse.matches.length === 0) {
+        console.log('No document chunks found for project:', projectId);
+        return [];
+      }
+      
+      // Transform Pinecone results to our format
+      const results = queryResponse.matches.map(match => ({
+        id: match.id,
+        projectId: match.metadata.projectId,
+        documentName: match.metadata.documentName,
+        text: match.metadata.text,
+        similarity: match.score,
+        metadata: {
+          chunkIndex: match.metadata.chunkIndex,
+          startIndex: match.metadata.startIndex,
+          endIndex: match.metadata.endIndex,
+          length: match.metadata.length
+        }
+      }));
+      
+      console.log(`Found ${results.length} similar chunks with similarities:`, 
+        results.map(r => ({ 
+          doc: r.documentName, 
+          similarity: r.similarity.toFixed(3),
+          chunk: r.metadata.chunkIndex 
+        })));
+      
+      return results;
+    } catch (error) {
+      console.error('Error searching similar documents in Pinecone:', error);
+      throw error;
+    }
+  }
+
+}
+
+export default new VectorService();
