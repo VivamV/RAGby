@@ -59,7 +59,7 @@ app.use((error, req, res, next) => {
   
   res.status(500).json({ 
     error: 'Internal server error',
-    message: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+    message: process.env.APP_ENV === 'development' ? error.message : 'Something went wrong'
   });
 });
 
