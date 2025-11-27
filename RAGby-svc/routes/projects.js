@@ -178,10 +178,10 @@ router.post("/:id/upload", authenticateToken, upload.single("file"), async (req,
     // Generate vector embeddings for the document
     let vectorized = false;
     let chunkCount = 0;
-    
+    let chunks=[];
     try {
       console.log('Generating vector embeddings...');
-      const chunks = await vectorService.storeDocument(
+       chunks = await vectorService.storeDocument(
         project._id.toString(), 
         req.file.originalname, 
         extractedText

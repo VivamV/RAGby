@@ -1,13 +1,14 @@
 import axios from 'axios';
 import { Pinecone } from '@pinecone-database/pinecone';
-
+import dotenv from 'dotenv';
+dotenv.config();
 class VectorService {
   constructor() {
     this.geminiApiKey = null;
     this.pinecone = null;
     this.index = null;
-    this.indexName = 'personalised-chatbot'; // Your Pinecone index name
-    this.dimension = 768; // text-embedding-004 produces 768-dimensional vectors
+    this.indexName = process.env.PINECONE_INDEX_NAME ||  'rag-by'; 
+    this.dimension = process.env.PINECONE_DIMENSIONs || 768; // text-embedding-004 produces 768-dimensional vectors
   }
 
   async initializeIfNeeded() {
