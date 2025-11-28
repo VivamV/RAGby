@@ -25,7 +25,6 @@ export default function CreateProject() {
   const navigate = useNavigate();
 
   const handleChange = (e) => {
-    console.log("handleChange in create Project",e.target);
     const { name, value, type, checked } = e.target;
     setFormData(prev => ({
       ...prev,
@@ -55,7 +54,7 @@ export default function CreateProject() {
     try {
       // Create the project
       const project = await projectsAPI.create(formData);
-      toast.success("Project created successfully!");
+      toast.success("Project created successfully! but file not uploaded yet");
 
       // Upload files if any
       if (files.length > 0) {
@@ -72,6 +71,7 @@ export default function CreateProject() {
     } catch (error) {
       console.error("Error creating project:", error);
       toast.error(error.response?.data?.error || "Failed to create project");
+      navigate("/mygpts");
     } finally {
       setLoading(false);
     }
@@ -216,7 +216,7 @@ export default function CreateProject() {
               type="file"
               id="file-upload"
               multiple
-              accept=".pdf,.docx,.txt"
+              accept=".pdf,.docx,.txt,.xlsx,.xls,.csv,.ods"
               onChange={handleFileChange}
               style={{ display: 'none' }}
             />
@@ -224,7 +224,7 @@ export default function CreateProject() {
               <FileText size={32} />
               <h4>Upload Documents</h4>
               <p>Drag & drop files here or click to browse</p>
-              <p className="small-muted">Supports PDF, DOCX, and TXT files (Max 10MB each)</p>
+              <p className="small-muted">Supports PDF, DOCX, TXT, XLSX, XLS, CSV, and ODS files (Max 10MB each)</p>
             </label>
           </div>
 

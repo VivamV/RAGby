@@ -30,7 +30,7 @@ function postCheck(answer) {
 router.post("/:projectId/sessions", authenticateToken, async (req, res) => {
   try {
     const project = await Project.findById(req.params.projectId);
-    
+
     if (!project) {
       return res.status(404).json({ error: "Project not found" });
     }
@@ -50,7 +50,7 @@ router.post("/:projectId/sessions", authenticateToken, async (req, res) => {
     await chatSession.save();
     res.status(201).json(chatSession);
   } catch (error) {
-    console.error("Error creating chat session:", error);
+    console.error("[CreateChatSessionAPI]:Error creating chat session:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -59,18 +59,22 @@ router.post("/:projectId/sessions", authenticateToken, async (req, res) => {
 // Send message in chat session (RAG functionality),most imp
 router.post("/:projectId/sessions/:sessionId/messages", authenticateToken, async (req, res) => {
   try {
+
     const { message } = req.body;
+    console.log("[messagesAPI]: Message received in chat session:", message);
 
     // Apply guardrails
     const preCheckResult = preCheck(message);//question length restricted to 3000 and disallowed words
+
     if (preCheckResult) {
       return res.status(400).json({ error: preCheckResult });
     }
+    console.log("[messagesAPI]: Pre-check passed for message:");
 
     // Get project and chat session
     const project = await Project.findById(req.params.projectId);
     const chatSession = await ChatSession.findById(req.params.sessionId);
-  
+
     if (!project || !chatSession) {
       return res.status(404).json({ error: "Project or chat session not found" });
     }
@@ -95,48 +99,49 @@ router.post("/:projectId/sessions/:sessionId/messages", authenticateToken, async
     let relevantDocs = [];
     let context = "";
     let sources = [];
-    
+
     try {
-      console.log(`Searching for relevant documents using vector similarity...`);
+      console.log(`[messagesAPI]: Searching for relevant documents using vector similarity...`);
       const vectorResults = await vectorService.searchSimilarDocuments(
-        project._id.toString(), 
-        message, 
+        project._id.toString(),
+        message,
         5 // Top 5 most similar chunks
       );
-   
+
       if (vectorResults.length > 0) {
-        context = vectorResults.map(chunk => 
+        context = vectorResults.map(chunk =>
           `From "${chunk.documentName}" (similarity: ${(chunk.similarity * 100).toFixed(1)}%): ${chunk.text}`
         ).join('\n\n');
-        
+
         sources = [...new Set(vectorResults.map(chunk => chunk.documentName))]; // Unique document names
-        console.log(`Found ${vectorResults.length} relevant chunks from ${sources.length} documents`);
+        console.log(`[messagesAPI]: Found ${vectorResults.length} relevant chunks from ${sources.length} documents`);
       } else {
-        console.log('No vector embeddings found, falling back to keyword search...');
+        console.log('[messagesAPI]: No vector embeddings found, falling back to keyword search...');
         // Fallback to old keyword search if no vectors exist,i dont think we should ever use this
+        //decide this
         relevantDocs = searchDocuments(message, project.documents);
-        context = relevantDocs.map(doc => 
+        context = relevantDocs.map(doc =>
           `From "${doc.documentName}": ${doc.content}`
         ).join('\n\n');
         sources = relevantDocs.map(doc => doc.documentName);
       }
     } catch (vectorError) {
-      console.error('Vector search failed, falling back to keyword search:', vectorError);
-      // Fallback to old keyword search
+      console.error('[messagesAPI]: Vector search failed, falling back to keyword search:', vectorError);
+      // Fallback to old keyword search,i dont think we should ever use this
       relevantDocs = searchDocuments(message, project.documents);
-      context = relevantDocs.map(doc => 
+      context = relevantDocs.map(doc =>
         `From "${doc.documentName}": ${doc.content}`
       ).join('\n\n');
       sources = relevantDocs.map(doc => doc.documentName);
     }
 
+    console.log("[messagesAPI]: Context prepared for AI response:", context.substring(0, 500));
     // Prepare conversation history for context
     const recentMessages = chatSession.messages.slice(-10); // Last 10 messages for context
-    console.log("recentMessages", recentMessages);
-    const conversationContext = recentMessages.map(msg => 
+    const conversationContext = recentMessages.map(msg =>
       `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
     ).join('\n');
-    console.log("conversationContext", conversationContext);
+    console.log("[messagesAPI]:  conversationContext", conversationContext);
 
     // Generate AI response using Gemini
     let aiResponse;
@@ -144,7 +149,7 @@ router.post("/:projectId/sessions/:sessionId/messages", authenticateToken, async
     try {
       // Create enhanced prompt with context
       let enhancedPrompt = message;
-      
+
       if (context) {
         enhancedPrompt = `Based on the following context from the user's documents and our conversation history, please answer the user's question.
 
@@ -156,7 +161,7 @@ ${conversationContext}
 
 Please provide a helpful response. If the answer can be found in the provided context, reference it. If not, provide a general helpful response and mention that you don't have specific information about this topic in the uploaded documents.`;
       }
-       else {
+      else {
         enhancedPrompt = `Based on our conversation history, please answer the user's question:
 
 Recent conversation:
@@ -167,6 +172,8 @@ Current question: ${message}
 Note: I don't have access to specific documents for this question, so I'll provide a general helpful response.`;
       }
 
+      console.log("[messagesAPI]: Enhanced prompt prepared for AI:", enhancedPrompt.substring(0, 500), '...');
+     
       aiResponse = await geminiService.generateResponse(
         enhancedPrompt,
         "",
@@ -176,7 +183,7 @@ Note: I don't have access to specific documents for this question, so I'll provi
       // Apply post-processing guardrails
       aiResponse = postCheck(aiResponse);
     } catch (aiError) {
-      console.error("AI generation error:", aiError);
+      console.error("[messagesAPI]: AI generation error:", aiError);
       aiResponse = "I apologize, but I'm having trouble generating a response right now. Please try again later.";
     }
 
@@ -189,15 +196,15 @@ Note: I don't have access to specific documents for this question, so I'll provi
     });
 
     // Update chat title if this is the first exchange,par aisa karna galat hoga kyuki title user ne pehle de dia hoga,and we are overriding it
-   //have to think about keeping this functionality or not
-    if (chatSession.messages.length === 2) {
-      try {
-        const title = await geminiService.generateTitle([{ role: 'user', content: message }]);
-        chatSession.title = title;
-      } catch (titleError) {
-        console.error("Error generating title:", titleError);
-      }
-    }
+    //have to think about keeping this functionality or not,i think just comment out this
+    // if (chatSession.messages.length === 2) {
+    //   try {
+    //     const title = await geminiService.generateTitle([{ role: 'user', content: message }]);
+    //     chatSession.title = title;
+    //   } catch (titleError) {
+    //     console.error("[messagesAPI]: Error generating title:", titleError);
+    //   }
+    // }
 
     await chatSession.save();
 
@@ -213,7 +220,7 @@ Note: I don't have access to specific documents for this question, so I'll provi
     });
 
   } catch (error) {
-    console.error("Error processing chat message:", error);
+    console.error("[messagesAPI]: Error processing chat message:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -234,7 +241,7 @@ router.delete("/:projectId/sessions/:sessionId", authenticateToken, async (req, 
     await ChatSession.findByIdAndDelete(req.params.sessionId);
     res.json({ success: true, message: "Chat session deleted" });
   } catch (error) {
-    console.error("Error deleting chat session:", error);
+    console.error("[DeleteChatSessionAPI]:Error deleting chat session:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -267,13 +274,13 @@ router.put("/:projectId/sessions/:sessionId/title", authenticateToken, async (re
     chatSession.title = title.trim();
     await chatSession.save();
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       message: "Chat title updated successfully",
       session: chatSession
     });
   } catch (error) {
-    console.error("Error updating chat title:", error);
+    console.error("[UpdateChatTitleAPI]:Error updating chat title:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

@@ -26,12 +26,20 @@ const storage = multer.diskStorage({
 const upload = multer({ 
   storage,
   fileFilter: (req, file, cb) => {
-    // Accept only documents
-    const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
+    // Accept documents and spreadsheets
+    const allowedTypes = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+      'application/vnd.ms-excel', // .xls
+      'text/csv', // .csv
+      'application/x-vnd.oasis.opendocument.spreadsheet' // .ods
+    ];
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Only PDF, DOCX, and TXT files are allowed'), false);
+      cb(new Error('Only PDF, DOCX, TXT, XLSX, XLS, CSV, and ODS files are allowed'), false);
     }
   },
   limits: {
@@ -116,7 +124,7 @@ router.get("/:id", authenticateToken, async (req, res) => {
 
     res.json({ project, chatSessions });
   } catch (error) {
-    console.error("Error fetching project:", error);
+    console.error("Error fetching project by id:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -169,18 +177,19 @@ router.post("/:id/upload", authenticateToken, upload.single("file"), async (req,
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
     }
-    console.log("req file received",req.file);
+    console.log("[uploadAPI+projects]: req file received",req.file);
+
     // Extract text from the uploaded file
     const extractedText = await extractTextFromFile(req.file.path, req.file.mimetype);
 
-    console.log(`Processing document: ${req.file.originalname} (${extractedText.length} characters)`);
+    console.log(`[uploadAPI+projects]: Extracted Text for document: ${req.file.originalname} with extracted(${extractedText.length} characters)`);
 
-    // Generate vector embeddings for the document
+    // Generate vector embeddings for the document and store in Pinecone Vector DB
     let vectorized = false;
     let chunkCount = 0;
     let chunks=[];
     try {
-      console.log('Generating vector embeddings...');
+      console.log('[uploadAPI+projects]: Generating vector embeddings...');
        chunks = await vectorService.storeDocument(
         project._id.toString(), 
         req.file.originalname, 
@@ -188,10 +197,9 @@ router.post("/:id/upload", authenticateToken, upload.single("file"), async (req,
       );
       vectorized = true;
       chunkCount = chunks.length;
-      console.log(`Generated ${chunkCount} vector embeddings for document`);
+      console.log(`[uploadAPI+projects]: Generated ${chunkCount} vector embeddings for document`);
     } catch (vectorError) {
-      console.error('Error generating vector embeddings:', vectorError);
-      // Continue without vectorization - document will still be uploaded
+      console.error('[uploadAPI+projects]: Error generating vector embeddings:', vectorError);
     }
 
     // Add document to project
@@ -216,11 +224,18 @@ router.post("/:id/upload", authenticateToken, upload.single("file"), async (req,
       chunks
     });
   } catch (error) {
-    console.error("Error uploading file:", error);
-    
+    console.error("[uploadAPI+projects]: Error uploading file:", error);
+
     // Clean up uploaded file if processing failed
     if (req.file && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
+    }
+    
+    // Check if it's an unsupported file type error
+    if (error.message && error.message.includes('Unsupported file type')) {
+      return res.status(400).json({ 
+        error: error.message
+      });
     }
     
     res.status(500).json({ error: "Failed to process uploaded file" });
@@ -256,7 +271,7 @@ router.delete("/:id", authenticateToken, async (req, res) => {
 
     res.json({ success: true, message: "Project deleted successfully" });
   } catch (error) {
-    console.error("Error deleting project:", error);
+    console.error("[DeleteProjectAPI]: Error deleting project:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
