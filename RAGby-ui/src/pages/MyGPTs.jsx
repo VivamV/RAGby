@@ -207,7 +207,7 @@ function ProjectCard({ project, onRefresh }) {
       <input
         id={`file-${project._id}`}
         type="file"
-        accept=".pdf,.docx,.txt"
+        accept=".pdf,.docx,.txt,.xlsx,.xls,.csv,.ods"
         style={{ display: "none" }}
         onChange={handleFileUpload}
       />

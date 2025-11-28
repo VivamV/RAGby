@@ -31,10 +31,10 @@ class VectorService {
 
       try {
         this.index = this.pinecone.index(this.indexName);
-        console.log(`Connected to Pinecone index: ${this.indexName}`);
+        console.log(`[VectorService Initialisation]: Connected to Pinecone index: ${this.indexName}`);
       } catch (error) {
-        console.error('Failed to connect to Pinecone index:', error);
-        throw new Error(`Failed to connect to Pinecone index: ${this.indexName}`);
+        console.error('[VectorService Initialisation]: Failed to connect to Pinecone index:', error);
+        throw new Error(`[VectorService Initialisation]: Failed to connect to Pinecone index: ${this.indexName}`);
       }
     }
   }
@@ -55,7 +55,7 @@ class VectorService {
 
       return response.data.embedding.values;
     } catch (error) {
-      console.error('Error generating embedding:', error.response?.data || error.message);
+      console.error('[VectorService+generateEmbedding]: Error generating embedding:', error.response?.data || error.message);
       throw new Error('Failed to generate embedding');
     }
   }
@@ -88,12 +88,12 @@ class VectorService {
       const documentChunks = [];
       const vectors = [];
       
-      console.log(`Processing ${chunks.length} chunks for document: ${documentName}`);
+      console.log(`[VectorService StoreDoc]: Chunking done. Processing ${chunks.length} chunks for document: ${documentName}`);
       
       // Generate embeddings for each chunk
       for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i];
-        console.log(` Generating embedding for chunk ${i + 1}/${chunks.length}`);
+        console.log(`[VectorService StoreDoc]: Generating embedding for chunk ${i + 1}/${chunks.length}`);
         
         const embedding = await this.generateEmbedding(chunk.text);
         const chunkId = `${projectId}_${documentName.replace(/[^a-zA-Z0-9]/g, '_')}_${i}`;
@@ -129,20 +129,20 @@ class VectorService {
       }
       
       // Batch upsert vectors to Pinecone
-      console.log(`Upserting ${vectors.length} vectors to Pinecone...`);
-      
+      console.log(`[VectorService StoreDoc]: Embedding done. Upserting ${vectors.length} vectors to Pinecone...`);
+
       // Pinecone recommends batching upserts in groups of 100
       const batchSize = 100;
       for (let i = 0; i < vectors.length; i += batchSize) {
         const batch = vectors.slice(i, i + batchSize);
         await this.index.upsert(batch);
-        console.log(`Upserted batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(vectors.length / batchSize)}`);
+        console.log(`[VectorService StoreDoc]:Upserted batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(vectors.length / batchSize)}`);
       }
-      
-      console.log(`Stored ${documentChunks.length} chunks for document: ${documentName} in Pinecone`);
+
+      console.log(`[VectorService StoreDoc]: Stored ${documentChunks.length} chunks for document: ${documentName} in Pinecone`);
       return documentChunks;
     } catch (error) {
-      console.error('Error storing document in Pinecone:', error);
+      console.error('[VectorService StoreDoc]: Error storing document in Pinecone:', error);
       throw error;
     }
   }
@@ -153,12 +153,15 @@ class VectorService {
   async searchSimilarDocuments(projectId, query, topK = 5) {
     try {
       await this.initializeIfNeeded();
-      
-      console.log(`Searching for similar documents in project: ${projectId}`);
-      
+
+      console.log(`[VectorService SearchSimilarDocs]: Searching for similar documents in project and started generating embedding for question: ${projectId}`);
+
       // Generate embedding for the query
       const queryEmbedding = await this.generateEmbedding(query);
-      console.log("query embedding generated in searchingsimilardocuments",queryEmbedding);
+
+      console.log("[VectorService SearchSimilarDocs]: Query embedding generated for question:", queryEmbedding);
+
+      console.log("[VectorService SearchSimilarDocs]: Querying Pinecone for similar document chunks... filtering by projectID");
       // Query Pinecone with project filter
       const queryResponse = await this.index.query({
         vector: queryEmbedding,
@@ -168,11 +171,11 @@ class VectorService {
           projectId: { $eq: projectId }
         }
       });
-      
-      console.log("Pinecone query response:", queryResponse);
+
+      console.log("[VectorService SearchSimilarDocs]: Pinecone query response:", queryResponse);
 
       if (!queryResponse.matches || queryResponse.matches.length === 0) {
-        console.log('No document chunks found for project:', projectId);
+        console.log('[VectorService SearchSimilarDocs]: No document chunks found for project:', projectId);
         return [];
       }
       
@@ -190,17 +193,17 @@ class VectorService {
           length: match.metadata.length
         }
       }));
-      
-      console.log(`Found ${results.length} similar chunks with similarities:`, 
-        results.map(r => ({ 
-          doc: r.documentName, 
+
+      console.log(`[VectorService SearchSimilarDocs]: Found ${results.length} similar chunks with similarities:`,
+        results.map(r => ({
+          doc: r.documentName,
           similarity: r.similarity.toFixed(3),
           chunk: r.metadata.chunkIndex 
         })));
       
       return results;
     } catch (error) {
-      console.error('Error searching similar documents in Pinecone:', error);
+      console.error('[VectorService SearchSimilarDocs]: Error searching similar documents in Pinecone:', error);
       throw error;
     }
   }

@@ -12,13 +12,11 @@ import { connectDB } from "./db.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-
-
 dotenv.config();
 
 // Debug environment variables
 console.log('Environment variables check:');
-console.log('GEMINI_API_KEY:', process.env.GEMINI_API_KEY ? `${process.env.GEMINI_API_KEY.substring(0, 10)}...${process.env.GEMINI_API_KEY.substring(process.env.GEMINI_API_KEY.length - 4)}` : 'NOT FOUND');
+console.log('GEMINI_API_KEY:', process.env.GEMINI_API_KEY ? 'SET' : 'NOT FOUND');
 console.log('JWT_SECRET:', process.env.JWT_SECRET ? 'SET' : 'NOT SET');
 console.log('MONGODB_URI:', process.env.MONGODB_URI ? 'SET' : 'NOT SET');
 
@@ -32,7 +30,6 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Serve uploaded files statically (for development)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Routes
@@ -43,8 +40,7 @@ app.use("/api/chat", chatRoutes);
 // Health check
 app.get("/healthCheck", (req, res) => {
   res.json({ 
-    message: "RAGby Backend is running 🚀", 
-    version: "1.0.0",
+    message: "RAGby Backend is running", 
     timestamp: new Date().toISOString()
   });
 });
@@ -70,15 +66,11 @@ app.use((req, res) => {
 
 const PORT = process.env.PORT || 5000;
 
-// Start server
 const startServer = async () => {
   try {
     await connectDB();
-    console.log('Database connected successfully');
-    
     app.listen(PORT, () => {
       console.log(`Server listening on port ${PORT}`);
-      console.log(`API Documentation: http://localhost:${PORT}`);
     });
   } catch (error) {
     console.error('Failed to start server:', error);

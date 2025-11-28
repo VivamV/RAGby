@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { createRequire } from 'module';
 import mammoth from 'mammoth';
+import XLSX from 'xlsx';
 
 const require = createRequire(import.meta.url);
 const pdfParse = require('pdf-parse');
@@ -22,11 +23,45 @@ export const extractTextFromFile = async (filePath, fileType) => {
       case 'text/plain':
         return fs.readFileSync(filePath, 'utf8');
 
+      // Excel files (.xlsx, .xls)
+      case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+      case 'application/vnd.ms-excel':
+        const workbook = XLSX.readFile(filePath);
+        let excelText = '';
+        
+        // Process each sheet
+        workbook.SheetNames.forEach(sheetName => {
+          const worksheet = workbook.Sheets[sheetName];
+          // Convert sheet to CSV format, then extract as text
+          const sheetData = XLSX.utils.sheet_to_csv(worksheet);
+          excelText += `\n--- Sheet: ${sheetName} ---\n${sheetData}\n`;
+        });
+        
+        return excelText;
+
+      // Google Sheets exported as Excel format
+      case 'application/x-vnd.oasis.opendocument.spreadsheet':
+        const odsWorkbook = XLSX.readFile(filePath);
+        let odsText = '';
+        
+        odsWorkbook.SheetNames.forEach(sheetName => {
+          const worksheet = odsWorkbook.Sheets[sheetName];
+          const sheetData = XLSX.utils.sheet_to_csv(worksheet);
+          odsText += `\n--- Sheet: ${sheetName} ---\n${sheetData}\n`;
+        });
+        
+        return odsText;
+
+      // CSV files (also used by Google Sheets export)
+      case 'text/csv':
+        const csvContent = fs.readFileSync(filePath, 'utf8');
+        return csvContent;
+
       default:
-        throw new Error('Unsupported file type');
+        throw new Error(`Unsupported file type: ${fileType}. Supported types: PDF, DOCX, TXT, XLSX, XLS, CSV, ODS`);
     }
   } catch (error) {
-    console.error('Error extracting text:', error);
+    console.error('[fileProcessor + ExtractingText]: Error extracting text:', error);
     throw error;
   }
 };

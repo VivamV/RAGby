@@ -22,7 +22,6 @@ export default function SignIn(){
   };
 
   const handleSubmit = async (e) => {
-    console.log("Form submitted with data:", formData);
     e.preventDefault();
     
     // Validate form data
