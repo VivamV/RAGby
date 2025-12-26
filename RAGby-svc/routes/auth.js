@@ -21,7 +21,10 @@ router.post("/login", async (req, res) => {
 
     // Check password
     const isValidPassword = await user.comparePassword(password);
+    console.log("[AUTH DEBUG] Password valid:", isValidPassword);
+    
     if (!isValidPassword) {
+      console.log("[AUTH DEBUG] Invalid password attempt for:", email);
       return res.status(401).json({ error: "Invalid email or password" });
     }
 

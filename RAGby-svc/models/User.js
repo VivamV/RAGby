@@ -8,16 +8,20 @@ const UserSchema = new mongoose.Schema({
   avatar: { type: String, default: "" },
 }, { timestamps: true });
 
-// Hash password before saving
+// Hash the client-hashed password again on server side
 UserSchema.pre('save', async function(next) {
   if (!this.isModified('password')) return next();
+  
+  // Hash the client-hashed password again for extra security
   this.password = await bcrypt.hash(this.password, 12);
   next();
 });
 
-// Compare password method
-UserSchema.methods.comparePassword = async function(candidatePassword) {
-  return bcrypt.compare(candidatePassword, this.password);
+// Compare password method - compare client hash with server-hashed version
+UserSchema.methods.comparePassword = async function(candidateHashedPassword) {
+  const result = await bcrypt.compare(candidateHashedPassword, this.password);
+  console.log("[PASSWORD DEBUG] Comparison result:", result);
+  return result;
 };
 
 export default mongoose.model("User", UserSchema);

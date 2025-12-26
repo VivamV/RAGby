@@ -208,6 +208,48 @@ class VectorService {
     }
   }
 
+  // Delete all vectors for a specific project from Pinecone
+  async deleteProjectVectors(projectId) {
+    try {
+      await this.initializeIfNeeded();
+
+      console.log(`[VectorService DeleteProjectVectors]: Starting cleanup of vectors for project: ${projectId}`);
+
+      // First, query to get all vector IDs for this project
+      const queryResponse = await this.index.query({
+        vector: new Array(this.dimension).fill(0), // Dummy vector
+        topK: 10000, // Large number to get all vectors
+        includeMetadata: false,
+        includeValues: false,
+        filter: {
+          projectId: { $eq: projectId }
+        }
+      });
+
+      if (queryResponse.matches && queryResponse.matches.length > 0) {
+        const vectorIds = queryResponse.matches.map(match => match.id);
+        console.log(`[VectorService DeleteProjectVectors]: Found ${vectorIds.length} vectors to delete for project: ${projectId}`);
+
+        // Delete by IDs in batches
+        const batchSize = 1000;
+        for (let i = 0; i < vectorIds.length; i += batchSize) {
+          const batch = vectorIds.slice(i, i + batchSize);
+          await this.index.deleteMany(batch);
+          console.log(`[VectorService DeleteProjectVectors]: Deleted batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(vectorIds.length / batchSize)}`);
+        }
+
+        console.log(`[VectorService DeleteProjectVectors]: Successfully deleted ${vectorIds.length} vectors for project: ${projectId}`);
+        return { deletedCount: vectorIds.length };
+      } else {
+        console.log(`[VectorService DeleteProjectVectors]: No vectors found for project: ${projectId}`);
+        return { deletedCount: 0 };
+      }
+    } catch (error) {
+      console.error('[VectorService DeleteProjectVectors]: Error deleting project vectors from Pinecone:', error);
+      throw error;
+    }
+  }
+
 }
 
 export default new VectorService();

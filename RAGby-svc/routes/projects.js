@@ -50,7 +50,7 @@ const upload = multer({
 const router = express.Router();
 
 // GET public projects
-router.get("/public", async (req, res) => {
+router.get("/public", authenticateToken, async (req, res) => {
   try {
     const publicProjects = await Project.find({ isPublic: true })
       .populate('userId', 'name email')
@@ -262,6 +262,15 @@ router.delete("/:id", authenticateToken, async (req, res) => {
         fs.unlinkSync(doc.filePath);
       }
     });
+
+    // Delete vector embeddings from Pinecone
+    try {
+      await vectorService.deleteProjectVectors(req.params.id);
+      console.log(`[DeleteProjectAPI]: Successfully cleaned up vectors for project: ${req.params.id}`);
+    } catch (vectorError) {
+      console.error('[DeleteProjectAPI]: Error deleting vectors from Pinecone:', vectorError);
+      // Continue with deletion even if vector cleanup fails
+    }
 
     // Delete chat sessions
     await ChatSession.deleteMany({ projectId: req.params.id });
